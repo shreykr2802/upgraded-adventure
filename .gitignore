@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Env / secrets
+.env
+
+# Vector store data
+chroma_storage/
+
+# Generated artifacts
+page_map.json
+migration_rules.json
+migrated/
+.agent_workdir/
+
+# .NET sidecar build output
+sidecar/bin/
+sidecar/obj/
+
+# OS
+.DS_Store

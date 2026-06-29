@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>DotNetAnalyzer</AssemblyName>
+    <RootNamespace>DotNetAnalyzer</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Roslyn: load and semantically analyse the whole solution -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.9.2" />
+    <PackageReference Include="Microsoft.Build.Locator" Version="1.7.8" />
+    <!-- Razor: parse .cshtml into a real syntax tree -->
+    <PackageReference Include="Microsoft.AspNetCore.Razor.Language" Version="6.0.36" />
+  </ItemGroup>
+
+</Project>
