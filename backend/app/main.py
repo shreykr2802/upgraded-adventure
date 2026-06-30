@@ -53,10 +53,12 @@ app.add_middleware(
 from app.api.routes_project import router as project_router
 from app.api.routes_analyze import router as analyze_router
 from app.api.routes_setup import router as setup_router
+from app.api.routes_migrate import router as migrate_router
 
 app.include_router(project_router)
 app.include_router(analyze_router)
 app.include_router(setup_router)
+app.include_router(migrate_router)
 
 
 @app.get("/", tags=["infra"])
@@ -64,5 +66,5 @@ def root():
     return {
         "service": "ui-migration-agent",
         "version": "2.0.0",
-        "stages": ["project", "analyze", "setup", "migrate (passes — in progress)"],
+        "stages": ["project", "analyze", "setup", "migrate"],
     }

@@ -3,13 +3,18 @@ analysis/engine.py
 ──────────────────
 Engine abstraction for .NET analysis.
 
-Two engines produce the SAME page_map.json contract:
-  - "regex"  → DotNetGrapher (pure Python, no dependencies, approximate)
-  - "roslyn" → the .NET sidecar (Roslyn + Razor.Language, accurate, needs SDK)
+This project ships **regex-only** (pure Python, no .NET, no Roslyn). The engine
+abstraction is kept as a clean extension point: a future Roslyn sidecar could
+be dropped in behind the same interface without touching anything downstream.
 
-Everything downstream (assembler, rule_deriver, migrator, the API) reads
-page_map.json and is unaware of which engine produced it. This module is the
-single seam where the choice is made.
+  - "regex"  → DotNetGrapher (pure Python, no dependencies) — THE DEFAULT, SHIPPED
+  - "roslyn" → optional .NET sidecar (NOT shipped here). If selected without the
+               sidecar present, analyze_repo() raises a clear error telling you
+               to use --engine regex.
+
+Everything downstream (passes, rule_deriver, the API) reads page_map.json and is
+unaware of which engine produced it. This module is the single seam where the
+choice is made.
 
 Contract (page_map.json):
   {

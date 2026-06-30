@@ -1,101 +1,38 @@
-# UI Migration Agent — Clean Foundation (v2)
+# UI Migration Agent
 
-A clean, layered foundation for migrating a **.NET / C# / CSHTML (Razor)**
-codebase into **React + TypeScript**, grounded in your existing design system.
+An autonomous agent that migrates a **.NET / C# / CSHTML (Razor)** codebase into
+**React + TypeScript**, grounded in your existing design system. Migration runs
+**layer by layer** — models, controllers, layouts, components, then pages — with
+a review gate between each layer.
 
-This export contains **only the reusable, working pieces** — the analysis
-layer, the infrastructure, the API for the stable stages, and the new layered
-**passes skeleton**. The page-by-page migration code from the earlier iteration
-was intentionally left out; migration is being rebuilt on the passes
-architecture.
-
-Vector store is **ChromaDB only** (local file storage, no server).
+Roslyn-free: analysis is pure Python (regex grapher). Vector store is **ChromaDB**
+(local file storage, no server). No Qdrant.
 
 ---
 
-## Architecture: layered migration
-
-The agent migrates the codebase **layer by layer**, not page by page. Five
-ordered passes, each one topologically sorted by dependency, each indexing its
-output before the next pass begins, with a review gate between passes:
+## How it works
 
 ```
-Pass 1  MODELS      .cs classes      → TypeScript interfaces
-Pass 2  CONTROLLERS .cs controllers  → hooks + typed fetch stubs (no real endpoints)
-Pass 3  LAYOUTS     _Layout.cshtml   → layout components
-Pass 4  COMPONENTS  partials/shared  → components mapped to your design system
-Pass 5  PAGES       entry views      → final page components (composes 1–4)
+ .NET repo --> ANALYZE --> page_map.json
+                  |
+ React repo --> SETUP --> design-system components + derived rules -> vector stores
+                  |
+              MIGRATE (five ordered passes, each indexes before the next)
+                  |
+   Pass 1  MODELS      .cs classes      -> types/*.ts        (TypeScript interfaces)
+   Pass 2  CONTROLLERS .cs controllers  -> hooks/*.ts        (typed fetch stubs)
+   Pass 3  LAYOUTS     _Layout.cshtml   -> layouts/*.tsx     (app shell + slots)
+   Pass 4  COMPONENTS  partials         -> components/*.tsx  (design-system mapped)
+   Pass 5  PAGES       entry views      -> pages/*.tsx       (composes 1-4)
+                  |
+              React/TypeScript project + manifest + artifact records
 ```
 
-Each pass retrieves the **already-converted** output of earlier passes (from
-the artifact store) so later work builds on real migrated TypeScript instead of
+Each pass is **topologically sorted** (a model that references another converts
+second), **indexes its output** into the artifact store before the next pass, and
+**stops at a review gate** so you approve before advancing. Later passes retrieve
+the already-converted artifacts (real interfaces, hooks, components) instead of
 re-deriving from .NET.
-
----
-
-## What's in this foundation
-
-```
-backend/app/
-├── config.py            # env + model ids (ChromaDB path, gateway, models)
-├── gateway.py           # OpenAI-compatible gateway client (chat/embed/rerank)
-├── services.py          # role-specific model calls (Sonnet/Haiku/embed/rerank)
-├── prompts.py           # shared prompts + RAG context builder
-├── main.py              # FastAPI app (project + analyze + setup mounted)
-│
-├── analysis/            # ── .NET + React analysis (reusable) ──
-│   ├── dotnet_grapher.py     # regex page-cluster resolver (hardened)
-│   ├── engine.py             # engine swap: regex ⇄ roslyn sidecar
-│   ├── razor_constructs.py   # unique Razor construct extractor
-│   ├── rule_deriver.py       # Sonnet-derived migration rules
-│   ├── component_scanner.py  # @react-docgen/cli component discovery
-│   └── component_semantics.py# Haiku semantic pass + React page usage scan
-│
-├── rag/                 # ── retrieval backbone (ChromaDB) ──
-│   ├── stores.py             # ChromaDB VectorStore + code/design stores
-│   ├── indexer.py            # index components + code patterns
-│   └── retriever.py          # dual-store retrieval + reranking
-│
-├── passes/              # ── NEW: layered migration skeleton ──
-│   ├── toposort.py           # dependency ordering + cycle detection
-│   ├── artifact_store.py     # migrated-artifact store (keyed by origin)
-│   ├── base.py               # MigrationPass protocol + WorkItem/PassResult
-│   ├── manifest.py           # resumable control-flow manifest
-│   └── orchestrator.py       # runs passes in order, review gates
-│
-└── api/                 # ── UI-facing API (stable stages) ──
-    ├── events.py             # SSE helpers
-    ├── deps.py               # single-project config + paths
-    ├── routes_project.py     # POST/GET /api/project, /api/health
-    ├── routes_analyze.py     # POST /api/analyze (SSE) + page map reads
-    └── routes_setup.py       # POST /api/setup (SSE) + components/rules reads
-
-sidecar/                 # ── optional .NET analysis engine ──
-    ├── Program.cs            # Roslyn + Razor → page_map.json
-    ├── ControllerIndex.cs    # semantic action→view→model resolution
-    ├── RazorAnalyzer.cs      # partials/layout/EditorFor from Razor tree
-    └── ...                   # (see sidecar/README.md)
-
-scripts/
-    ├── verify_phase0.py      # check models reachable via the gateway
-    ├── analyze_dotnet.py     # Stage 1: build page_map.json (--engine regex|roslyn)
-    └── agent_setup.py        # Stage 2: scan React + derive rules + seed stores
-
-backend/tests/           # 100 tests, all passing (mocked LLM/stores)
-```
-
----
-
-## What's intentionally NOT here (being rebuilt as passes)
-
-- `migrate/` (assembler, migrator, page_prompts) — the old page-by-page flow
-- `pipeline.py` — the original single-file pipeline
-- `routes_migrate.py` — the page-by-page migrate API
-- The five passes themselves — `models_pass.py` … `pages_pass.py` drop into
-  `app/passes/` implementing the `MigrationPass` protocol in `base.py`.
-
-The skeleton is ready for them: register a pass with `register_pass()` and the
-orchestrator drives it.
 
 ---
 
@@ -105,39 +42,148 @@ orchestrator drives it.
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env      # fill gateway URL/key, model ids, CHROMA_PATH
 
-# component discovery needs:
+cp .env.example .env        # fill: gateway URL/key, model ids, CHROMA_PATH
+
+# component discovery needs the React docgen CLI:
 npm install -g @react-docgen/cli
 ```
 
-## Run order (stable stages)
+`.env` keys:
+
+```
+LLM_GATEWAY_URL=...         # OpenAI-compatible gateway
+LLM_GATEWAY_KEY=...
+MODEL_SONNET=claude-sonnet-4-6
+MODEL_HAIKU=claude-haiku-3-5
+EMBED_CODE_MODEL=BAAI/llm-embedder
+EMBED_DOCS_MODEL=amazon.titan-embed-text-v2
+RERANK_MODEL=BAAI/bge-reranker-large
+CHROMA_PATH=./chroma_storage
+```
+
+---
+
+## Run -- full pipeline (CLI)
 
 ```bash
 cd backend
-python ../scripts/verify_phase0.py                          # models reachable?
-python ../scripts/analyze_dotnet.py --repo /path/to/dotnet --out ../page_map.json
-python ../scripts/agent_setup.py --react-repo /path/to/react \
-    --dotnet-repo /path/to/dotnet --page-map ../page_map.json \
-    --import-base "@your-org/ui" --rules-out ../migration_rules.json
+
+# 0. Verify the gateway + models are reachable
+python ../scripts/verify_phase0.py
+
+# 1. ANALYZE -- build the page map from the .NET repo
+python ../scripts/analyze_dotnet.py \
+    --repo /path/to/dotnet-repo \
+    --out ../page_map.json
+
+# 2. SETUP -- scan the React design system + derive rules + seed stores
+python ../scripts/agent_setup.py \
+    --react-repo /path/to/react-repo \
+    --dotnet-repo /path/to/dotnet-repo \
+    --page-map ../page_map.json \
+    --import-base "@your-org/ui" \
+    --rules-out ../migration_rules.json
+
+# 3. MIGRATE -- run all five passes (auto-approve each review gate)
+python ../scripts/migrate.py \
+    --dotnet-repo /path/to/dotnet-repo \
+    --react-repo /path/to/react-repo \
+    --page-map ../page_map.json \
+    --out ../migrated \
+    --auto-approve
 ```
+
+Output lands in `../migrated/` as `types/`, `hooks/`, `layouts/`, `components/`,
+`pages/`, plus `manifest.json` (control flow) and `artifact_records.json`
+(source of truth).
+
+### Run one layer at a time (with review between each)
+
+```bash
+python ../scripts/migrate.py --dotnet-repo ... --react-repo ... --page-map ... --out ../migrated --layer model
+# review ../migrated/types, then:
+python ../scripts/migrate.py ... --approve          # advance to controllers
+python ../scripts/migrate.py ... --layer controller
+python ../scripts/migrate.py ... --approve
+# ... and so on through layout, component, page
+
+python ../scripts/migrate.py ... --status           # see where you are
+python ../scripts/migrate.py ... --resume            # run the current layer
+```
+
+---
+
+## Run -- as an API (for the UI)
+
+```bash
+cd backend
+uvicorn app.main:app --reload --port 8000
+```
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/project` | configure the repo pair |
+| GET  | `/api/health` | gateway + store reachability |
+| POST | `/api/analyze` | Stage 1 analyze (SSE) |
+| GET  | `/api/pagemap`, `/api/pagemap/unresolved`, `/api/pagemap/page/{name}` | page map reads |
+| POST | `/api/setup` | Stage 2 setup (SSE) |
+| GET  | `/api/components`, `/api/rules`, `/api/rules/{kind}` | setup reads |
+| POST | `/api/migrate/layer` | run the current layer (SSE) |
+| POST | `/api/migrate/approve` | approve the review gate -> advance |
+| GET  | `/api/migrate/status` | per-layer status (for the stepper) |
+| GET  | `/api/migrate/artifacts`, `/api/migrate/artifact/{origin}` | generated output |
+
+Open `http://localhost:8000/docs` for the interactive schema.
+
+---
 
 ## Tests
 
 ```bash
 cd backend
-pytest -v       # 100 tests, all mocked — no live gateway/store needed
+pytest -q          # 122 tests, all mocked -- no live gateway/store needed
 ```
 
 ---
 
-## Models (via your gateway)
+## Project layout
 
-| Role | Model |
-|---|---|
-| Generation / rule derivation | Claude Sonnet 4.6 |
-| Classification / semantics / review | Claude Haiku 3.5 |
-| Code embedding | BAAI/llm-embedder |
-| Doc embedding | Amazon Titan embed-text-v2 |
-| Reranking | BAAI/bge-reranker-large |
 ```
+backend/app/
+  config.py  gateway.py  services.py  prompts.py  main.py
+  analysis/          # .NET + React analysis
+    dotnet_grapher.py  engine.py  razor_constructs.py
+    rule_deriver.py  component_scanner.py  component_semantics.py
+  rag/               # ChromaDB stores + indexer + retriever
+  passes/            # -- the layered migration --
+    toposort.py            # dependency ordering
+    csharp_parser.py       # regex C# parser (Python-only)
+    artifact_store.py      # migrated-artifact store (keyed by origin)
+    base.py  manifest.py  orchestrator.py
+    models_pass.py         # Pass 1
+    controllers_pass.py    # Pass 2
+    layouts_pass.py        # Pass 3
+    components_pass.py     # Pass 4
+    pages_pass.py          # Pass 5
+    registry.py            # wires all five into the orchestrator
+  api/               # project / analyze / setup / migrate routes (+ SSE)
+
+scripts/   verify_phase0.py  analyze_dotnet.py  agent_setup.py  migrate.py
+backend/tests/   122 tests
+```
+
+---
+
+## Notes & limits (honest)
+
+- **Roslyn-free by choice.** The C# parser (`csharp_parser.py`) is regex-based:
+  it handles common MVC model/controller shapes (auto-properties, generics,
+  inheritance) well, but won't trace dynamic `return View(variable)` names --
+  those are flagged as unresolved in the page map and surfaced as page TODOs.
+- **API logic is intentionally not migrated.** Controllers become hooks with
+  **typed fetch stubs** (`// TODO: wire endpoint`), not working endpoints.
+- The agent does the heavy lifting; **you review** at each gate. Low-confidence
+  outputs and dropped server-side logic are flagged, never silently lost.
+- Tests mock the LLM -- "passing" means the code is correct and wired; real code
+  quality depends on your gateway + models at run time.
